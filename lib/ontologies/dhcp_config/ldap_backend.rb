@@ -6,15 +6,16 @@ class LdapBackend
   end
 
   def list_subnets()
-    result = []
-
-    ldap = LdapBackend.open()
-    ldap.search("cn=DHCPConfig,#{LDAP_BASE_DN}", LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpSubnet)") do |entry|
-      result << AddressInfo.new(entry['cn'].first, entry['dhcpNetMask'].first.to_i)
+    self.connect do |ldap|
+      result = []
+      ldap.search("cn=DHCPConfig,%s" % @config[:base_dn], LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpSubnet)") do |entry|
+        result << AddressInfo.new(entry['cn'].first, entry['dhcpNetMask'].first.to_i)
+      end
+      
+      return result
     end
-
-    ldap.unbind()
-    result
+  rescue Exception => ex
+    []
   end
 
   def add_subnet(subnet, netmask)

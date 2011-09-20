@@ -1,5 +1,5 @@
 require 'cirrocumulus/ontology'
-require File.join(AGENT_ROOT, 'config/dhcp_config.rb')
+require File.join(AGENT_ROOT, 'config/ldap_config.rb')
 require File.join(AGENT_ROOT, 'ontologies/dhcp_config/subnet.rb')
 require File.join(AGENT_ROOT, 'ontologies/dhcp_config/ldap_backend.rb')
 
@@ -64,12 +64,16 @@ class DhcpConfigOntology < Ontology::Base
       end
     end
 
-    logger.info "DHCP: #{subnet} ++ (#{mac} = #{ip} [#{hostname}])"
-    result = @ldap.add_host(subnet, mac, ip, hostname, network_boot == 1)
-    if result
-      success(message)
+    if check_subnet(subnet)
+      logger.info "DHCP: #{subnet} ++ (#{mac} = #{ip} [#{hostname}])"
+      result = @ldap.add_host(subnet, mac, ip, hostname, network_boot == 1)
+      if result
+        success(message)
+      else
+        failure(message)
+      end
     else
-      failure(message)
+      refuse(message, :unknown_subnet)
     end
   end
 
@@ -91,15 +95,30 @@ class DhcpConfigOntology < Ontology::Base
         mac = param.second
       end
     end
-
-    logger.info "DHCP: #{subnet} -- (#{mac})"
-    result = @ldap.remove_host(subnet, mac)
-    if result
-      success(message)
+    
+    if check_subnet(subnet)
+      logger.info "DHCP: #{subnet} -- (#{mac})"
+      result = @ldap.remove_host(subnet, mac)
+      if result
+        success(message)
+      else
+        failure(message)
+      end
     else
-      failure(message)
+      refuse(message, :uknown_subnet)
     end
-
+  end
+  
+  def check_subnet(subnet)
+    return @ldap.list_subnets().collect {|s| s.ip}.include?(subnet)
+  end
+  
+  def refuse(message, reason)
+    msg = Cirrocumulus::Message.new(nil, 'refuse', [message.content, [reason]])
+    msg.ontology = self.name
+    msg.receiver = message.sender
+    msg.in_reply_to = message.reply_with
+    self.agent.send_message(msg)
   end
 
   def success(message)
