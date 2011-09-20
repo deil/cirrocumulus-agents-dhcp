@@ -79,7 +79,35 @@ class DhcpConfigOntology < Ontology::Base
 
   # (update (subnet '172.16.11.0') (mac '00:16:...') (ip '172.16.11.101') (hostname 'vuYYY') (network_boot false))
   def handle_update_request(obj, message)
+    subnet = mac = nil
 
+    obj.each do |param|
+      next if !param.is_a?(Array)
+
+      if param.first == :subnet
+        subnet = param.second
+      elsif param.first == :mac
+        mac = param.second
+      elsif param.first == :ip
+        ip = param.second
+      elsif param.first == :hostname
+        hostname = param.second
+      elsif param.first == :network_boot
+        network_boot = param.second.to_i
+      end
+    end
+    
+    if check_subnet(subnet)
+      logger.info "DHCP: #{subnet} update #{mac}"
+      result = false
+      if result
+        success(message)
+      else
+        failure(message)
+      end
+    else
+      refuse(message, :uknown_subnet)
+    end
   end
 
   # (remove (subnet '172.16.11.0') (mac '00:16...'))

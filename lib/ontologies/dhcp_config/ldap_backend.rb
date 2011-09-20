@@ -35,28 +35,55 @@ class LdapBackend
     ldap.add(dn, attr)
     ldap.unbind
   end
+  
+  def get_host(subnet, mac)
+    self.connect do |ldap|
+      ldap.search("cn=%s,cn=DHCPConfig,%s" % [subnet, @config[:base_dn]], LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpHost)") do |entry|
+        hw_addr = entry['dhcpHWAddress'].first.split(' ')[1]
+        if hw_addr == mac
+          fixed_address = nil
+          network_boot = false
+          entry['dhcpStatements'].each do |s|
+            slices = s.split(' ')
+            fixed_address = slices[1] if slices.first == 'fixed-address'
+            network_boot = true if ['next-server', 'filename'].include? slices.first
+          end
 
-  def list_hosts(subnet)
-    dhcp = []
-
-    ldap = LdapBackend.open()
-    ldap.search("cn=#{subnet},cn=DHCPConfig,#{LDAP_BASE_DN}", LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpHost)") do |entry|
-      hash = Hash.new
-      hash[:host] = entry['cn'][0]
-      hash[:mac] = entry['dhcpHWAddress'][0].split(' ')[1]
-      entry['dhcpStatements'].each do |statement|
-        slices = statement.split(' ')
-        if slices[0] == 'fixed-address'
-          hash[:ip] = slices[1]
+          return {
+            :host => entry['cn'].first,
+            :mac => hw_addr,
+            :ip => fixed_address,
+            :network_boot => network_boot
+          }
         end
       end
-
-      dhcp.push(hash)
-      p entry
     end
+    
+    nil
+  rescue Exception => ex
+    puts ex.to_s
+    nil
+  end
 
-    ldap.unbind()
-    dhcp
+  def list_hosts(subnet)
+    self.connect do |ldap|
+      result = []
+      ldap.search("cn=%s,cn=DHCPConfig,%s" % [subnet, @config[:base_dn]], LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpHost)") do |entry|
+        hash = Hash.new
+        hash[:host] = entry['cn'][0]
+        hash[:mac] = entry['dhcpHWAddress'][0].split(' ')[1]
+        entry['dhcpStatements'].each do |statement|
+          slices = statement.split(' ')
+          if slices[0] == 'fixed-address'
+            hash[:ip] = slices[1]
+          end
+        end
+
+        result << hash
+      end
+
+      return result
+    end
   end
 
   def add_host(subnet, mac, ip, hostname, network_boot)
