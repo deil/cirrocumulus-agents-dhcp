@@ -35,35 +35,6 @@ class LdapBackend
     ldap.add(dn, attr)
     ldap.unbind
   end
-  
-  def get_host(subnet, mac)
-    self.connect do |ldap|
-      ldap.search("cn=%s,cn=DHCPConfig,%s" % [subnet, @config[:base_dn]], LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpHost)") do |entry|
-        hw_addr = entry['dhcpHWAddress'].first.split(' ')[1]
-        if hw_addr == mac
-          fixed_address = nil
-          network_boot = false
-          entry['dhcpStatements'].each do |s|
-            slices = s.split(' ')
-            fixed_address = slices[1] if slices.first == 'fixed-address'
-            network_boot = true if ['next-server', 'filename'].include? slices.first
-          end
-
-          return {
-            :host => entry['cn'].first,
-            :mac => hw_addr,
-            :ip => fixed_address,
-            :network_boot => network_boot
-          }
-        end
-      end
-    end
-    
-    nil
-  rescue Exception => ex
-    puts ex.to_s
-    nil
-  end
 
   def list_hosts(subnet)
     self.connect do |ldap|
@@ -100,6 +71,77 @@ class LdapBackend
       return ldap.add(dn, attr)
     end
   rescue
+    false
+  end
+
+  def get_host(subnet, mac)
+    self.connect do |ldap|
+      ldap.search("cn=%s,cn=DHCPConfig,%s" % [subnet, @config[:base_dn]], LDAP::LDAP_SCOPE_ONELEVEL, "(objectClass=dhcpHost)") do |entry|
+        hw_addr = entry['dhcpHWAddress'].first.split(' ')[1]
+        if hw_addr == mac
+          fixed_address = nil
+          network_boot = 0
+          entry['dhcpStatements'].each do |s|
+            slices = s.split(' ')
+            fixed_address = slices[1] if slices.first == 'fixed-address'
+            network_boot = 1 if ['next-server', 'filename'].include? slices.first
+          end
+
+          return {
+            :host => entry['cn'].first,
+            :mac => hw_addr,
+            :ip => fixed_address,
+            :network_boot => network_boot
+          }
+        end
+      end
+    end
+    
+    nil
+  rescue Exception => ex
+    puts ex.to_s
+    nil
+  end
+
+  
+  def update_host(subnet, mac, ip, hostname, network_boot)
+    old = get_host(subnet, mac)
+
+    self.connect do |ldap|
+      if !ip.empty? && ip != old[:ip]
+        mods = ['fixed-address ' + ip]
+        if old[:network_boot] == 1
+          mods << 'next-server 172.16.11.2'
+          mods << 'filename "pxelinux.0"'
+        end
+        ip_mod = [LDAP.mod(LDAP::LDAP_MOD_REPLACE, 'dhcpStatements', mods)]
+        ldap.modify("cn=%s,cn=%s,cn=DHCPConfig,%s" % [old[:host], subnet, @config[:base_dn]], ip_mod)
+      end
+
+      if !network_boot.nil? && network_boot != old[:network_boot]
+        if network_boot == 1
+          boot_mod = [LDAP.mod(LDAP::LDAP_MOD_ADD, 'dhcpStatements', ['next-server 172.16.11.2', 'filename "pxelinux.0"'])]
+          ldap.modify("cn=%s,cn=%s,cn=DHCPConfig,%s" % [old[:host], subnet, @config[:base_dn]], boot_mod)
+        elsif network_boot == 0
+          no_boot_mod = [LDAP.mod(LDAP::LDAP_MOD_DELETE, 'dhcpStatements', ['next-server 172.16.11.2', 'filename "pxelinux.0"'])]
+          ldap.modify("cn=%s,cn=%s,cn=DHCPConfig,%s" % [old[:host], subnet, @config[:base_dn]], no_boot_mod)
+        end
+      end
+
+      if !hostname.empty? && hostname != old[:host]
+        host_mod = [LDAP.mod(LDAP::LDAP_MOD_REPLACE, 'dhcpOption', ["host-name \"#{hostname}\""])]
+        ldap.modify("cn=%s,cn=%s,cn=DHCPConfig,%s" % [old[:host], subnet, @config[:base_dn]], host_mod)
+        ldap.modrdn(
+          "cn=%s,cn=%s,cn=DHCPConfig,%s" % [old[:host], subnet, @config[:base_dn]],
+          "cn=%s" % [hostname],
+          true
+        )
+      end
+    end
+    
+    true
+  rescue Exception => ex
+    puts ex.to_s
     false
   end
 
