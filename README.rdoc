@@ -1,0 +1,16 @@
+= Cirrocumulus
+Cirrocumulus (http://github.com/deil/cirrocumulus) is an agent-based infrastructure management system.
+
+= DHCP Configuration Agent
+DHCP Configuration agent controls DHCP configuration (yeah :)) of hosts. It just adds a host, updates information about it or removes from system.
+Uses OpenLDAP as backend.
+
+= Configuration
+This agent expects file config/lda[_config.rb, which should contain connection information to LDAP:
+DHCP_CONFIG = {
+  :host => '<ldap_ip>',
+  :port => 389,
+  :base_dn => 'ou=dhcp,dc=example,dc=com', # base dn to bind
+  :user => 'cn=admin,dc=example,dc=com', # username to use
+  :password => '<ldap_password>'
+}
