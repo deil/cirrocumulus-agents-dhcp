@@ -38,7 +38,7 @@ class DhcpConfigOntology < Ontology::Base
     if action == :add
       handle_add_request(message.content, message)
     elsif action == :update
-      handle_update_request(message.content.second, message)
+      handle_update_request(message.content, message)
     elsif action == :remove
       handle_remove_request(message.content, message)
     end
@@ -79,7 +79,7 @@ class DhcpConfigOntology < Ontology::Base
 
   # (update (subnet '172.16.11.0') (mac '00:16:...') (ip '172.16.11.101') (hostname 'vuYYY') (network_boot false))
   def handle_update_request(obj, message)
-    subnet = mac = nil
+    subnet = mac = hostname = network_boot = ip = nil
 
     obj.each do |param|
       next if !param.is_a?(Array)
@@ -99,7 +99,7 @@ class DhcpConfigOntology < Ontology::Base
     
     if check_subnet(subnet)
       logger.info "DHCP: #{subnet} update #{mac}"
-      result = false
+      result = @ldap.update_host(subnet, mac, ip, hostname, network_boot)
       if result
         success(message)
       else
@@ -138,6 +138,8 @@ class DhcpConfigOntology < Ontology::Base
   end
   
   def check_subnet(subnet)
+    #p subnet
+    #p @ldap.list_subnets().collect {|s| s.ip}
     return @ldap.list_subnets().collect {|s| s.ip}.include?(subnet)
   end
   
